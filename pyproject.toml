@@ -1,0 +1,29 @@
+[project]
+name = "claude-autoapprove-mcp"
+version = "0.1.0"
+description = "An MCP server to inject auto-approve MCP functionality into Claude Desktop"
+authors = [{ name = "PYNESYS LLC" }]
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+    "claude-autoapprove==0.1.3",
+    "fastmcp>=2.2.0, <3.0.0",
+    "psutil>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/PyneSys/claude_autoapprove_mcp"
+Repository = "https://github.com/PyneSys/claude_autoapprove_mcp"
+Issues = "https://github.com/PyneSys/claude_autoapprove_mcp/issues"
+
+[project.scripts]
+claude-autoapprove-mcp = "claude_autoapprove_mcp.autoapprove_server:main"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
