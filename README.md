@@ -3,7 +3,7 @@
 An MCP to restart Claude Desktop App with enabled debugger port and inject a JavaScript into it, which extends Claude with MCP auto-approve functionality.
 It uses the [claude-autoapprove](https://github.com/PyneSys/claude_autoapprove) library under the hood.
 
-> **Note:** Windows support is untested. If you try it on Windows, please share your experience!
+> **Note:** Windows support is untested. If you try it on Windows, please share your experience! If it doesn't work, please help me to fix it!
 
 ## How it works
 
