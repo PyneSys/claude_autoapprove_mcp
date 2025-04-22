@@ -199,6 +199,8 @@ def main(args=None):
         parser.add_argument("--daemon", action="store_true", help=argparse.SUPPRESS)
         args = parser.parse_args()
 
+    eprint(f"Starting Claude Auto-Approve MCP on port {args.port}...")
+
     if args.daemon:
         start_in_background(args)
         return
