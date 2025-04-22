@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 import asyncio
 import sys
-import os
 import psutil
 import time
 import subprocess
