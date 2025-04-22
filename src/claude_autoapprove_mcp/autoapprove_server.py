@@ -49,26 +49,30 @@ def find_claude_process():
 
 def get_main_claude_process() -> Optional[psutil.Process]:
     """
-    Walk up the parent process chain to find the main Claude process that started this script.
+    Walk up parent chain to find the main Claude application process.
 
-    :returns: The psutil.Process instance of the main Claude process if found, otherwise None.
+    :returns: The main Claude process if found, otherwise None.
     :rtype: psutil.Process or None
     """
-    proc = psutil.Process(os.getpid())
-    while proc:
-        if sys.platform == "darwin":
-            if proc.name() == "Claude" or any("Claude.app" in arg for arg in proc.cmdline()):
-                return proc
-        elif sys.platform == "win32":
-            pname = proc.name()
-            if "Claude.exe" in pname or any("Claude.exe" in arg for arg in proc.cmdline()):
-                return proc
-        elif sys.platform.startswith("linux"):
-            pname = proc.name()
-            if "Claude" in pname or any("Claude" in arg for arg in proc.cmdline()):
-                return proc
-        proc = proc.parent()
-    return None
+    # search up the parent-chain for the actual .app bundle binary on macOS
+    current = psutil.Process(os.getpid())
+    while current:
+        try:
+            exe_path = current.exe()
+        except (psutil.AccessDenied, psutil.ZombieProcess, psutil.NoSuchProcess):
+            exe_path = ""
+        if 'Contents/MacOS/Claude' in exe_path:
+            return current
+        current = current.parent()
+    # fallback: last ancestor named 'claude' or 'claude.exe'
+    current = psutil.Process(os.getpid())
+    candidate: Optional[psutil.Process] = None
+    while current:
+        name = current.name().lower()
+        if name in ('claude', 'claude.exe'):
+            candidate = current
+        current = current.parent()
+    return candidate
 
 
 def kill_claude_process():
@@ -78,27 +82,47 @@ def kill_claude_process():
     :returns: True if process was killed, False otherwise.
     :rtype: bool
     """
-    main_proc = get_main_claude_process()
-    proc = main_proc or find_claude_process()
-    if proc:
+    # try OS-specific graceful quit before forceful termination
+    if sys.platform == "darwin":
         try:
-            # terminate child processes first
-            children = proc.children(recursive=True)
-            for child in children:
-                eprint(f"Terminating child process {child.pid}...")
-                child.terminate()
-            eprint(f"Terminating main Claude process {proc.pid}...")
-            proc.terminate()
-            # wait for processes to terminate
-            wait_list = [proc] + children
-            _, alive = psutil.wait_procs(wait_list, timeout=5)
-            if alive:
-                eprint(f"Force killing remaining processes: {[p.pid for p in alive]}...")
-                for p in alive:
-                    p.kill()
+            subprocess.run(
+                ["osascript", "-e", 'tell application "Claude" to quit'],
+                check=False
+            )
             return True
         except Exception as e:
-            eprint(f"Error killing Claude process: {e}")
+            eprint(f"AppleScript quit failed: {e}")
+    elif sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/IM", "Claude.exe", "/T", "/F"],
+                check=False
+            )
+            return True
+        except Exception as e:
+            eprint(f"taskkill failed: {e}")
+    # detect main Claude process via parent-chain, fallback to simple finder
+    proc = get_main_claude_process() or find_claude_process()
+    if not proc:
+        return False
+    # terminate child processes first
+    try:
+        children = proc.children(recursive=True)
+        for child in children:
+            eprint(f"Terminating child process {child.pid}...")
+            child.terminate()
+        eprint(f"Terminating main Claude process {proc.pid}...")
+        proc.terminate()
+        # wait for processes to terminate
+        wait_list = [proc] + children
+        _, alive = psutil.wait_procs(wait_list, timeout=5)
+        if alive:
+            eprint(f"Force killing remaining processes: {[p.pid for p in alive]}...")
+            for p in alive:
+                p.kill()
+        return True
+    except Exception as e:
+        eprint(f"Error killing Claude process: {e}")
     return False
 
 
