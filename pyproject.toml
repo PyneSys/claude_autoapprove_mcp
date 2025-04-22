@@ -1,6 +1,6 @@
 [project]
 name = "claude-autoapprove-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "An MCP server to inject auto-approve MCP functionality into Claude Desktop"
 authors = [{ name = "PYNESYS LLC" }]
 readme = "README.md"

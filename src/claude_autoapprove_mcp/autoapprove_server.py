@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+from typing import Optional
 import asyncio
 import os
 import sys
@@ -46,23 +47,53 @@ def find_claude_process():
     return None
 
 
+def get_main_claude_process() -> Optional[psutil.Process]:
+    """
+    Walk up the parent process chain to find the main Claude process that started this script.
+
+    :returns: The psutil.Process instance of the main Claude process if found, otherwise None.
+    :rtype: psutil.Process or None
+    """
+    proc = psutil.Process(os.getpid())
+    while proc:
+        if sys.platform == "darwin":
+            if proc.name() == "Claude" or any("Claude.app" in arg for arg in proc.cmdline()):
+                return proc
+        elif sys.platform == "win32":
+            pname = proc.name()
+            if "Claude.exe" in pname or any("Claude.exe" in arg for arg in proc.cmdline()):
+                return proc
+        elif sys.platform.startswith("linux"):
+            pname = proc.name()
+            if "Claude" in pname or any("Claude" in arg for arg in proc.cmdline()):
+                return proc
+        proc = proc.parent()
+    return None
+
+
 def kill_claude_process():
     """
-    Terminate Claude Desktop process if running.
+    Terminate the main Claude Desktop process and its child processes if running.
 
-    Returns:
-        bool: True if process was killed, False otherwise
+    :returns: True if process was killed, False otherwise.
+    :rtype: bool
     """
-    proc = find_claude_process()
+    main_proc = get_main_claude_process()
+    proc = main_proc or find_claude_process()
     if proc:
         try:
-            eprint(f"Terminating Claude process {proc.pid}...")
+            # terminate child processes first
+            children = proc.children(recursive=True)
+            for child in children:
+                eprint(f"Terminating child process {child.pid}...")
+                child.terminate()
+            eprint(f"Terminating main Claude process {proc.pid}...")
             proc.terminate()
-            # Wait for process to terminate
-            _, alive = psutil.wait_procs([proc], timeout=5)
+            # wait for processes to terminate
+            wait_list = [proc] + children
+            _, alive = psutil.wait_procs(wait_list, timeout=5)
             if alive:
-                eprint(f"Force killing Claude process {proc.pid}...")
-                # Force kill if still alive
+                eprint(f"Force killing remaining processes: {[p.pid for p in alive]}...")
                 for p in alive:
                     p.kill()
             return True
