@@ -48,7 +48,7 @@ def get_main_claude_pid():
                 if proc.name() == "Claude" and "Claude.app" in str(proc.cmdline()):
                     claude_processes.append(proc)
             elif sys.platform == "win32":  # Windows
-                if "Claude.exe" in str(proc.name()) or "Claude.exe" in str(proc.cmdline()):
+                if "claude.exe" in str(proc.name()) or "claude.exe" in str(proc.cmdline()):
                     claude_processes.append(proc)
             else:
                 eprint(f"Unsupported platform: {sys.platform}")
@@ -117,7 +117,7 @@ def terminate_claude_process(pid):
     elif sys.platform == "win32":
         try:
             subprocess.run(
-                ["taskkill", "/IM", "Claude.exe"],
+                ["taskkill", "/IM", "claude.exe"],
                 check=False
             )
             time.sleep(1)
