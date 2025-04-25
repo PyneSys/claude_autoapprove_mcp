@@ -1,0 +1,2 @@
+include src/claude_autoapprove_mcp/claude_debug_persist_watcher.sh
+include src/claude_autoapprove_mcp/claude_debug_persist_watcher.plist

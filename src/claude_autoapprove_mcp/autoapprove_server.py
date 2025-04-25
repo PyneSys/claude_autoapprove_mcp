@@ -6,9 +6,13 @@ import time
 import subprocess
 import argparse
 import multiprocessing
+import contextlib
+import shutil
+from pathlib import Path
+
 
 from claude_autoapprove.claude_autoapprove import inject_script, DEFAULT_PORT, get_claude_config, \
-    get_trusted_tools, is_port_open, start_claude
+    get_trusted_tools, get_blocked_tools, is_port_open, start_claude
 
 from fastmcp import FastMCP
 
@@ -30,6 +34,37 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 
+@contextlib.contextmanager
+def redirect_stdout_to_stderr():
+    """
+    Redirect standard output to standard error.
+
+    This prevents any debug printouts from affecting websocket communications.
+
+    :return: Context manager that redirects stdout to stderr
+    """
+    old_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+
+
+def inject_script_with_stdout_redirect(port=DEFAULT_PORT):
+    """
+    Wrapper around the inject_script function that redirects stdout to stderr.
+
+    This prevents debug messages from the external library from interfering
+    with the websocket communication.
+
+    :param port: The debug port Claude is running on
+    :return: Result of inject_script
+    """
+    with redirect_stdout_to_stderr():
+        return asyncio.run(inject_script(claude_config, port))
+
+
 def get_main_claude_pid():
     """
     Find the main Claude process and return its PID.
@@ -37,7 +72,6 @@ def get_main_claude_pid():
     For Electron apps, find the oldest process that isn't a renderer.
 
     :return: PID of the main Claude process, or None if not found.
-    :rtype: int or None
     """
     claude_processes = []
 
@@ -81,15 +115,12 @@ def get_main_claude_pid():
     return oldest.pid
 
 
-def terminate_claude_process(pid):
+def terminate_claude_process(pid: int | None) -> bool:
     """
     Terminate a Claude process given its PID.
 
     :param pid: PID of the Claude process to terminate.
-    :type pid: int
-
     :return: True if successfully terminated, False otherwise.
-    :rtype: bool
     """
     if pid is None:
         return False
@@ -162,7 +193,7 @@ def terminate_claude_process(pid):
         return False
 
 
-def claude_restart_worker(port):
+def claude_restart_worker(port: int):
     """
     Worker function that runs in a separate process.
 
@@ -173,7 +204,6 @@ def claude_restart_worker(port):
         4. Starts a new instance with the debugging port
 
     :param port: Port to use for the new Claude instance.
-    :type port: int
     """
 
     # Log worker startup
@@ -233,25 +263,84 @@ def claude_restart_worker(port):
         eprint(f"Unexpected error in restart worker: {e}")
 
 
-def main(args=None):
+def main(args: argparse.Namespace | None = None) -> int | None:
     """
     Main entry point for the Claude Auto-Approve MCP server.
 
     :param args: Optional argparse.Namespace object with parsed arguments.
-    :type args: argparse.Namespace or None
     :return: 1 if error occurred, otherwise None.
-    :rtype: int or None
     """
     if args is None:
         parser = argparse.ArgumentParser(description="Claude Auto-Approve MCP server")
         parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Debugger port for Claude Desktop")
+        parser.add_argument("--persist", action="store_true", help="Persist the injectable mode")
         args = parser.parse_args()
 
     port = args.port
 
+    # Uninstallation of the watcher script if it is installed and the --persist argument is not provided
+    if not args.persist:
+        if sys.platform == "darwin":
+            eprint("Removing persisted injectable mode...")
+
+            # Paths
+            user_support_dir = Path.home() / "Library/Application Support/Claude"
+            launch_agent_dir = Path.home() / "Library/LaunchAgents"
+            installed_plist = launch_agent_dir / "com.example.claude.watcher.plist"
+            watcher_script = user_support_dir / "claude_debug_persist_watcher.sh"
+
+            # Unload LaunchAgent if it exists
+            if installed_plist.exists():
+                subprocess.run(["launchctl", "unload", str(installed_plist)], check=False)
+
+            # Delete LaunchAgent plist
+            if installed_plist.exists():
+                installed_plist.unlink()
+
+            # Delete watcher script
+            if watcher_script.exists():
+                watcher_script.unlink()
+
+        else:
+            eprint("Persist cleanup is only supported on macOS atm.")
+
     # Check if Claude Desktop is running with the debugger port
     if not is_port_open(port):
         eprint(f"Claude Desktop is not listening on port {port}")
+
+        # Persist the injectable mode with a watcher script
+        if args.persist:
+            if sys.platform == "darwin":
+                eprint("Persisting the injectable mode...")
+
+                # Paths
+                mcp_dir = Path(__file__).parent
+                watcher_script = mcp_dir / "claude_debug_persist_watcher.sh"
+                plist_template = mcp_dir / "claude_debug_persist_watcher.plist"
+                user_support_dir = Path.home() / "Library/Application Support/Claude"
+                launch_agent_dir = Path.home() / "Library/LaunchAgents"
+                installed_plist = launch_agent_dir / "com.example.claude.watcher.plist"
+
+                # Ensure directories exist
+                user_support_dir.mkdir(parents=True, exist_ok=True)
+                launch_agent_dir.mkdir(parents=True, exist_ok=True)
+
+                # Copy watcher script
+                shutil.copy(watcher_script, user_support_dir / watcher_script.name)
+                (user_support_dir / watcher_script.name).chmod(0o755)
+
+                # Load plist template and replace $HOME
+                plist_content = plist_template.read_text()
+                plist_content = plist_content.replace("$HOME", str(Path.home()))
+
+                # Write the installed plist
+                installed_plist.write_text(plist_content)
+
+                # Load the LaunchAgent
+                subprocess.run(["launchctl", "load", str(installed_plist)], check=True)
+
+            else:
+                eprint("Persisting is only supported on macOS atm.")
 
         # Start a worker process to handle the entire restart process
         eprint("Starting worker process to handle Claude restart...")
@@ -271,7 +360,9 @@ def main(args=None):
     # Inject script and start MCP server
     try:
         eprint(f"Claude is in debug mode, injecting script into it...")
-        asyncio.run(inject_script(claude_config, port))
+        # Use our stdout redirector to prevent debug messages from interfering
+        # with websocket communication
+        inject_script_with_stdout_redirect(port)
         eprint("Script injected successfully, starting MCP server...")
         mcp.run()
     except Exception as e:
@@ -293,6 +384,15 @@ def autoapproved_tools() -> list[str]:
     List all the tools that have been auto-approved in the configuration.
 
     :return: List of auto-approved tool names.
-    :rtype: list[str]
     """
     return get_trusted_tools(claude_config)
+
+
+@mcp.tool()
+def autoblocked_tools() -> list[str]:
+    """
+    List all the tools that have been auto-blocked
+
+    :return: List of auto-blocked tool names.
+    """
+    return get_blocked_tools(claude_config)
