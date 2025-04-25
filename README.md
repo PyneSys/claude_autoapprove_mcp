@@ -45,7 +45,7 @@ You can find other installation options in the [uv installation guide](https://d
         "claude-autoapprove-mcp": {
             "command": "uvx",
             "args": [
-                "claude-autoapprove-mcp",
+                "claude-autoapprove-mcp"
             ],
             "autoapprove": [
                 "autoapproved_tools",
@@ -96,7 +96,7 @@ You can add `autoapprove` and `autoblock` parameters to each MCP server, the `cl
         "claude-autoapprove-mcp": {
         "command": "uvx",
             "args": [
-                "claude-autoapprove-mcp",
+                "claude-autoapprove-mcp"
             ],
         "autoapprove": [
             "autoapproved_tools"
