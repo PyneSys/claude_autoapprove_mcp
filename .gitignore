@@ -61,3 +61,6 @@ coverage.xml
 
 # Pyre type checker
 .pyre/
+
+# Project Memory
+MEMORY.md
