@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/pynesys-claude-autoapprove-mcp-badge.png)](https://mseep.ai/app/pynesys-claude-autoapprove-mcp)
+
 # Claude Auto-Approve MCP
 
 > **Warning**
